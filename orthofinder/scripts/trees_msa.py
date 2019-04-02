@@ -248,8 +248,47 @@ def CreateConcatenatedAlignment(ogsToUse_ids, ogs, alignment_filename_function, 
             outfile.write(">%s\n" % name)
             for i in xrange(0, len(seq), nChar):
                 outfile.write(seq[i:i+nChar] + "\n")
-            
-    
+
+
+
+def CreateConcatenatedAlignmentCmd(og_file, output_filename, fSingleCopy):
+    command = util.CreateFileOpCmd("concat", [og_file, output_filename, str(fSingleCopy)])
+    return command, None
+
+
+def CreateMsaJob(commands_and_filenames, job_index):
+    return util.GetJobFile(
+        files.FileHandler.GetWorkingDirectory_Write(),
+        '%02dspecies_trees_jobs' % job_index,
+        commands_and_filenames)
+
+
+def CreateConcatenatedAlignmentJob(ogsToUse_ids, output_filename, fSingleCopy, job_index):
+    og_file = os.path.join(files.FileHandler.GetWorkingDirectory_Write(), 'OgsToUse.txt')
+    with open(og_file, 'w') as f:
+        f.write('\n'.join(str(og_id) for og_id in ogsToUse_ids) + '\n')
+    return util.GetJobFile(
+        files.FileHandler.GetWorkingDirectory_Write(),
+        '%02dconcat_align_job' % job_index,
+        [CreateConcatenatedAlignmentCmd(og_file, output_filename, fSingleCopy)])
+
+
+def CreateSpeciesTreeJob(commands, job_index):
+    return util.CreateJob(commands, "species_tree", job_index)
+
+
+def CreateOGTreesJob(commands, job_index):
+    return util.CreateJob(commands, "og_trees", job_index)
+
+
+def CreateRenameTaxaJob(alignments, trees, job_index):
+    commands = [(util.CreateFileOpCmd("rename-alignment", [infile, outfile]), None)
+                for infile, outfile in alignments]
+    commands += [(util.CreateFileOpCmd("rename-tree", [infile, outfile]), None)
+                 for infile, outfile in trees]
+    return util.CreateJob(commands, "rename-taxa", job_index)
+
+
 """ 
 -----------------------------------------------------------------------------
                              TreesForOrthogroups            
@@ -280,19 +319,19 @@ class TreesForOrthogroups(object):
             for iOg, og in enumerate(ogs):
                 fastaWriter.WriteSeqsToFasta(og, self.GetFastaFilename(iOg))
               
-    def GetAlignmentCommandsAndNewFilenames(self, ogs):
+    def GetAlignmentCommandsAndNewFilenames(self, ogs, threads=None):
 #        if self.msa_program != "mafft":
         infn_list = [self.GetFastaFilename(i) for i, og in enumerate(ogs) if len(og) >= 2]
         outfn_list = [self.GetAlignmentFilename(i) for i, og in enumerate(ogs) if len(og) >= 2]
         id_list = ["OG%07d" % i for i, og in enumerate(ogs) if len(og) >= 2]
         nSeqs = [len(og) for og in ogs if len(og) >= 2]
-        return self.program_caller.GetMSACommands(self.msa_program, infn_list, outfn_list, id_list, nSeqs) 
+        return self.program_caller.GetMSACommands(self.msa_program, infn_list, outfn_list, id_list, nSeqs)
         
-    def GetTreeCommands(self, alignmentsForTree, ogs):
+    def GetTreeCommands(self, alignmentsForTree, ogs, threads=None):
         outfn_list = [self.GetTreeFilename(i) for i, og in enumerate(ogs) if len(og) >= 3]
         id_list = ["OG%07d" % i for i, og in enumerate(ogs) if len(og) >= 3]
         nSeqs = [len(og) for og in ogs if len(og) >= 3]
-        return self.program_caller.GetTreeCommands(self.tree_program, alignmentsForTree, outfn_list, id_list, nSeqs) 
+        return self.program_caller.GetTreeCommands(self.tree_program, alignmentsForTree, outfn_list, id_list, nSeqs)
      
     def RenameAlignmentTaxa(self, idsAlignFNS, accAlignFNs, idsDict):
         for i, (alignFN, outAlignFN) in enumerate(zip(idsAlignFNS, accAlignFNs)):
@@ -303,7 +342,7 @@ class TreesForOrthogroups(object):
                     else:
                         outfile.write(line)
           
-    def DoTrees(self, ogs, ogMatrix, idDict, speciesIdDict, speciesToUse, nProcesses, qStopAfterSeqs, qStopAfterAlignments, qDoSpeciesTree):
+    def DoTrees(self, ogs, ogMatrix, idDict, speciesIdDict, speciesToUse, qOutputCommands, nProcesses, qStopAfterSeqs, qStopAfterAlignments, qDoSpeciesTree):
         idDict.update(speciesIdDict) # smae code will then also convert concatenated alignment for species tree
         # 0       
         resultsDirsFullPath = [files.FileHandler.GetResultsSeqsDir(), files.FileHandler.GetResultsAlignDir(), files.FileHandler.GetResultsTreesDir()]
@@ -312,6 +351,8 @@ class TreesForOrthogroups(object):
         fastaWriter = FastaWriter(files.FileHandler.GetSpeciesSeqsDir(), speciesToUse)
         self.WriteFastaFiles(fastaWriter, ogs, idDict, True)
         if qStopAfterSeqs: return resultsDirsFullPath
+
+        job_files = []
 
         # 3
         # Get OGs to use for species tree
@@ -323,16 +364,32 @@ class TreesForOrthogroups(object):
         alignCommands_and_filenames = self.GetAlignmentCommandsAndNewFilenames(ogs)
         if qStopAfterAlignments:
             util.PrintUnderline("Inferring multiple sequence alignments")
-            pc.RunParallelCommandsAndMoveResultsFile(nProcesses, alignCommands_and_filenames, False)
-            if qDoSpeciesTree: CreateConcatenatedAlignment(iOgsForSpeciesTree, ogs, self.GetAlignmentFilename, concatenated_algn_fn, fSingleCopy)
+            if qOutputCommands:
+                job_files.append(
+                    CreateMsaJob(alignCommands_and_filenames, len(job_files)))
+            else:
+                pc.RunParallelCommandsAndMoveResultsFile(nProcesses, alignCommands_and_filenames, False)
+            if qDoSpeciesTree:
+                if qOutputCommands:
+                    job_files.append(CreateConcatenatedAlignmentJob(
+                        iOgsForSpeciesTree, concatenated_algn_fn, fSingleCopy, len(job_files)))
+                else:
+                    CreateConcatenatedAlignment(iOgsForSpeciesTree, ogs, self.GetAlignmentFilename, concatenated_algn_fn, fSingleCopy)
+
             # ids -> accessions
             alignmentFilesToUse = [self.GetAlignmentFilename(i) for i, _ in enumerate(alignCommands_and_filenames)]        
             accessionAlignmentFNs = [self.GetAlignmentFilename(i, True) for i in xrange(len(alignmentFilesToUse))]
             if qDoSpeciesTree: 
                 alignmentFilesToUse.append(concatenated_algn_fn)
                 accessionAlignmentFNs.append(files.FileHandler.GetSpeciesTreeConcatAlignFN(True))
-            self.RenameAlignmentTaxa(alignmentFilesToUse, accessionAlignmentFNs, idDict)
+            if qOutputCommands:
+                # TODO: make rename alignment taxa command
+                util.PrintUnderline(
+                    "Execute the commands in " + ','.join(job_files))
+            else:
+                self.RenameAlignmentTaxa(alignmentFilesToUse, accessionAlignmentFNs, idDict)
             return resultsDirsFullPath[:2]
+
         
         # Otherwise, alignments and trees
         # Strategy is
@@ -349,11 +406,20 @@ class TreesForOrthogroups(object):
             speciesTreeFN_ids = files.FileHandler.GetSpeciesTreeUnrootedFN()
             for i in iOgsForSpeciesTree:
                 commands_and_filenames.append([alignCommands_and_filenames[i], treeCommands_and_filenames[i]])
-            pc.RunParallelCommandsAndMoveResultsFile(nProcesses, commands_and_filenames, True)
-            CreateConcatenatedAlignment(iOgsForSpeciesTree, ogs, self.GetAlignmentFilename, concatenated_algn_fn, fSingleCopy)
-            # Add species tree to list of commands to run
+            if qOutputCommands:
+                job_files.append(CreateMsaJob(commands_and_filenames, len(job_files)))
+                job_files.append(CreateConcatenatedAlignmentJob(
+                    iOgsForSpeciesTree, concatenated_algn_fn, fSingleCopy, len(job_files)))
+            else:
+                pc.RunParallelCommandsAndMoveResultsFile(nProcesses, commands_and_filenames, True)
+                CreateConcatenatedAlignment(iOgsForSpeciesTree, ogs, self.GetAlignmentFilename, concatenated_algn_fn, fSingleCopy)
+                # Add species tree to list of commands to run
             commands_and_filenames = [self.program_caller.GetTreeCommands(self.tree_program, [concatenated_algn_fn], [speciesTreeFN_ids], ["SpeciesTree"])]
-            util.PrintUnderline("Inferring remaining multiple sequence alignments and gene trees") 
+            if qOutputCommands:
+                print(commands_and_filenames)
+                job_files.append(CreateSpeciesTreeJob(commands_and_filenames, len(job_files)))
+                commands_and_filenames = []
+            util.PrintUnderline("Inferring remaining multiple sequence alignments and gene trees")
         else:
             util.PrintUnderline("Inferring multiple sequence alignments and gene trees") 
 
@@ -365,25 +431,50 @@ class TreesForOrthogroups(object):
         for i in xrange(len(treeCommands_and_filenames), len(alignCommands_and_filenames)):
             if i in iOgsForSpeciesTree: continue
             commands_and_filenames.append([alignCommands_and_filenames[i]])
-        pc.RunParallelCommandsAndMoveResultsFile(nProcesses, commands_and_filenames, True)
-        
+        if qOutputCommands:
+            job_files.append(CreateOGTreesJob(commands_and_filenames, len(job_files)))
+        else:
+            pc.RunParallelCommandsAndMoveResultsFile(nProcesses, commands_and_filenames, True)
+
+
         # Convert ids to accessions
         accessionAlignmentFNs = [self.GetAlignmentFilename(i, True) for i in xrange(len(alignmentFilesToUse))]
         # Add concatenated Alignment
         if qDoSpeciesTree:
-            alignmentFilesToUse.append(concatenated_algn_fn)
-            accessionAlignmentFNs.append(files.FileHandler.GetSpeciesTreeConcatAlignFN(True))
-            qHaveSupport = util.HaveSupportValues(speciesTreeFN_ids)
-            if os.path.exists(speciesTreeFN_ids):
-                util.RenameTreeTaxa(speciesTreeFN_ids, files.FileHandler.GetSpeciesTreeUnrootedFN(True), idDict, qSupport=qHaveSupport, qFixNegatives=True)
+            if qOutputCommands:
+                job_files.append(
+                    CreateRenameTaxaJob(
+                        [(concatenated_algn_fn, files.FileHandler.GetSpeciesTreeConcatAlignFN(True))],
+                        [(speciesTreeFN_ids, files.FileHandler.GetSpeciesTreeUnrootedFN(True))],
+                        len(job_files)))
             else:
-                text = "ERROR: Species tree inference failed"
-                files.FileHandler.LogFailAndExit(text)
-        self.RenameAlignmentTaxa(alignmentFilesToUse, accessionAlignmentFNs, idDict)
-        qHaveSupport = None
-        for i in xrange(len(treeCommands_and_filenames)):
-            infn = self.GetTreeFilename(i)
-            if os.path.exists(infn):
-                if qHaveSupport == None: qHaveSupport = util.HaveSupportValues(infn)
-                util.RenameTreeTaxa(infn, self.GetTreeFilename(i, True), idDict, qSupport=qHaveSupport, qFixNegatives=True)       
+                qHaveSupport = util.HaveSupportValues(speciesTreeFN_ids)
+                alignmentFilesToUse.append(concatenated_algn_fn)
+                accessionAlignmentFNs.append(
+                    files.FileHandler.GetSpeciesTreeConcatAlignFN(True))
+                if os.path.exists(speciesTreeFN_ids):
+                    util.RenameTreeTaxa(speciesTreeFN_ids, files.FileHandler.GetSpeciesTreeUnrootedFN(True), idDict, qSupport=qHaveSupport, qFixNegatives=True)
+                else:
+                    text = "ERROR: Species tree inference failed"
+                    files.FileHandler.LogFailAndExit(text)
+
+        if qOutputCommands:
+            job_files.append(CreateRenameTaxaJob(
+                zip(alignmentFilesToUse, accessionAlignmentFNs),
+                [(self.GetTreeFilename(i), self.GetTreeFilename(i, True))
+                 for i in xrange(len(treeCommands_and_filenames))],
+                len(job_files)))
+            if qOutputCommands:
+                print("Run the commands contained in these files (each depends on the previous):\n" +
+                      "\n".join(job_files))
+                files.FileHandler.LogWorkingDirectoryTrees()
+        else:
+            self.RenameAlignmentTaxa(alignmentFilesToUse, accessionAlignmentFNs, idDict)
+            qHaveSupport = None
+            for i in xrange(len(treeCommands_and_filenames)):
+                infn = self.GetTreeFilename(i)
+                if os.path.exists(infn):
+                    if qHaveSupport == None: qHaveSupport = util.HaveSupportValues(infn)
+                    util.RenameTreeTaxa(infn, self.GetTreeFilename(i, True), idDict, qSupport=qHaveSupport, qFixNegatives=True)
+
         return resultsDirsFullPath[:2]

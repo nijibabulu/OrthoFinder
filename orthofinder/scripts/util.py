@@ -520,7 +520,57 @@ class Finalise(object):
     def __exit__(self, type, value, traceback):
         ptm = parallel_task_manager.ParallelTaskManager_singleton()
         ptm.Stop()
-        
+
+
+def GetJobFile(directory, output_filename, commands):
+    """Create and return the full path of a new job file with one command on
+    each line.
+
+    :param directory: the parent directory of the file
+    :param output_filename: the output file name
+    :param commands: a list of commands to run
+    :return: the name of the file containing the jobs
+    """
+    file_path = os.path.join(directory, output_filename)
+    with open(file_path, 'w') as f:
+        for command_group in commands:
+            if isinstance(command_group, list):
+                commands = command_group
+            elif isinstance(command_group, tuple):
+                commands = [command_group]
+            else:
+                raise ValueError(
+                        "Unknown command group type:\n%s. Should be list or tuple" %
+                        type(command_group))
+            for command, fns in commands:
+                f.write(command + '; ')
+                if fns is not None:
+                    f.write('mv %s %s ;' % fns)
+            f.write('\n')
+    return file_path
+
+
+def CreateJob(commands, name, job_index):
+    import files
+    return GetJobFile(
+        files.FileHandler.GetWorkingDirectory_Write(),
+        '%02d%s' % (job_index, name),
+        commands
+    )
+
+
+def CreateFileOpCmd(operation, arguments):
+    import orthofinder
+    import files
+    return ' '.join([
+        "python",
+        os.path.join(orthofinder.__location__, "orthofinder_file_op.py"),
+        # os.path.abspath(os.path.join(files.FileHandler.GetSpeciesSeqsDir()[0], os.pardir)),
+        os.path.abspath(os.path.join(files.FileHandler.GetWorkingDirectory_Write(), os.pardir)),
+        operation,
+        ] + arguments)
+
+
 
 """ TEMP """        
 def RunParallelCommands(nProcesses, commands, qShell):

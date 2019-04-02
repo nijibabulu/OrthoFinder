@@ -848,6 +848,7 @@ def OrthologuesWorkflow(speciesToUse, nSpAll,
                        msa_method,
                        tree_method,
                        recon_method,
+                       qOutputCommands,
                        nHighParallel,
                        nLowParrallel,
                        qDoubleBlast,
@@ -873,6 +874,13 @@ def OrthologuesWorkflow(speciesToUse, nSpAll,
     Variables:
     - ogSet - all the relevant information about the orthogroups, species etc.
     """
+
+    # TODO: this should be supported 
+    if qOutputCommands and not (qMSA or userSpeciesTree):
+        print("Can only output commands if runnint in MSA mode "
+               "or a species tree is provided")
+        util.Fail()
+
     ogSet = OrthoGroupsSet(files.FileHandler.GetWorkingDirectory1_Read(), speciesToUse, nSpAll, qAddSpeciesToIDs, idExtractor = util.FirstWordExtractor)
     
     tree_generation_method = "msa" if qMSA or qPhyldog else "dendroblast"
@@ -901,8 +909,26 @@ def OrthologuesWorkflow(speciesToUse, nSpAll,
             util.RenameTreeTaxa(spTreeFN_ids, files.FileHandler.GetSpeciesTreeUnrootedFN(True), ogSet.SpeciesDict(), qSupport=False, qFixNegatives=True)
         qDoMSASpeciesTree = (not qLessThanFourSpecies) and (not userSpeciesTree)
         util.PrintTime("Starting MSA/Trees")
-        seqs_alignments_dirs = treeGen.DoTrees(ogSet.OGs(qInclAll=True), ogSet.OrthogroupMatrix(), ogSet.Spec_SeqDict(), ogSet.SpeciesDict(), ogSet.speciesToUse, nHighParallel, qStopAfterSeqs, qStopAfterAlign or qPhyldog, qDoSpeciesTree=qDoMSASpeciesTree) 
+        seqs_alignments_dirs = treeGen.DoTrees(ogSet.OGs(qInclAll=True), ogSet.OrthogroupMatrix(), ogSet.Spec_SeqDict(), ogSet.SpeciesDict(), ogSet.speciesToUse, qOutputCommands, nHighParallel, qStopAfterSeqs, qStopAfterAlign or qPhyldog, qDoSpeciesTree=qDoMSASpeciesTree)
+
+        # TODO: since we only support stride, we always do this, but if we add
+        #  support for other methods, integrate futher
+        if qOutputCommands:
+            if not userSpeciesTree:
+                stride_job = util.CreateJob([(
+                    util.CreateFileOpCmd('stride', [
+                        files.FileHandler.GetSpeciesTreeUnrootedFN(),
+                        files.FileHandler.GetOGsTreeDir(),
+                        str(nHighParallel),
+                        files.FileHandler.GetSpeciesTreeIDsRootedFN()]),
+                    None)],
+                    'stride',
+                    99)
+                print(stride_job)
+            util.Success()
+
         util.PrintTime("Done MSA/Trees")
+
         if qDoMSASpeciesTree:
             spTreeFN_ids = files.FileHandler.GetSpeciesTreeUnrootedFN()
         if qStopAfterSeqs:
@@ -930,6 +956,7 @@ def OrthologuesWorkflow(speciesToUse, nSpAll,
         spTreeFN_ids, qSTAG = db.RunAnalysis()
     files.FileHandler.LogWorkingDirectoryTrees()
     qSpeciesTreeSupports = False if (userSpeciesTree or qMSA or qPhyldog) else qSTAG
+
     """
     SpeciesTree
     spTreeFN_ids, or equivalently FileHandler.GetSpeciesTreeUnrootedFN() in all cases (user, inferred etc)

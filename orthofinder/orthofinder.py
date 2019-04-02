@@ -832,6 +832,7 @@ def PrintHelp(program_caller):
     print(" -oa               Stop after inferring alignments for orthogroups")
     print("                   (requires '-M msa')")
     print(" -ot               Stop after inferring gene trees for orthogroups " )
+    print(" -oc               Output the commands at the point of workflow stop")
    
     print("")   
     print("WORKFLOW RESTART COMMANDS:") 
@@ -890,6 +891,7 @@ class Options(object):#
         self.qStopAfterSeqs = False
         self.qStopAfterAlignments = False
         self.qStopAfterTrees = False
+        self.qOutputCommands = False
         self.qMSATrees = False
         self.qAddSpeciesToIDs = True
         self.search_program = "diamond"
@@ -1129,7 +1131,9 @@ def ProcessArgs(program_caller):
             pickleDir_nonDefault = GetDirectoryArgument(arg, args)
         elif arg == "-op" or arg == "--only-prepare":
             options.qStopAfterPrepare = True
-        elif arg == "-og" or arg == "--only-groups":
+        elif arg == "-oc" or arg == "--output-commands":
+            options.qOutputCommands = True
+        elif arg == "-rc" or arg == "--resume-from-commands":
             options.qStopAfterGroups = True
         elif arg == "-os" or arg == "--only-seqs":
             options.qStopAfterSeqs = True
@@ -1332,7 +1336,7 @@ def DoOrthogroups(options, speciesInfoObj, seqsInfo):
     return statsFile, summaryText, orthogroupsResultsFilesString
 
 # 0
-def ProcessPreviousFiles(workingDir_list, qDoubleBlast):
+def ProcessPreviousFiles(workingDir_list, qDoubleBlast, qStartFromGroups=False):
     """Checks for:
     workingDir should be the WorkingDirectory containing Blast*.txt files
     
@@ -1395,6 +1399,7 @@ def ProcessPreviousFiles(workingDir_list, qDoubleBlast):
     # check SequenceIDs.txt and SpeciesIDs.txt files are present
     if not os.path.exists(scripts.files.FileHandler.GetSequenceIDsFN()):
         scripts.files.FileHandler.LogFailAndExit("ERROR: %s file must be provided if using previous calculated BLAST results" % scripts.files.FileHandler.GetSequenceIDsFN())
+
     return speciesInfo, speciesToUse_names
 
 # 6
@@ -1415,41 +1420,40 @@ def CreateSearchDatabases(seqsInfoObj, options, program_caller):
 # 7
 def RunSearch(options, speciessInfoObj, seqsInfo, program_caller):
     name_to_print = "BLAST" if options.search_program == "blast" else options.search_program
-    if options.qStopAfterPrepare:
-        util.PrintUnderline("%s commands that must be run" % name_to_print)
-    else:        
-        util.PrintUnderline("Running %s all-versus-all" % name_to_print)
     commands = GetOrderedSearchCommands(seqsInfo, speciessInfoObj, options.qDoubleBlast, options.search_program, program_caller)
     if options.qStopAfterPrepare:
+        util.PrintUnderline("%s commands that must be run" % name_to_print)
         for command in commands:
             print(command)
         util.Success()
-    print("Using %d thread(s)" % options.nBlast)
-    util.PrintTime("This may take some time....")  
-    cmd_queue = mp.Queue()
-    for iCmd, cmd in enumerate(commands):
-        cmd_queue.put((iCmd+1, cmd))           
-    runningProcesses = [mp.Process(target=util.Worker_RunCommand, args=(cmd_queue, options.nBlast, len(commands), True)) for i_ in xrange(options.nBlast)]
-    for proc in runningProcesses:
-        proc.start()#
-    for proc in runningProcesses:
-        while proc.is_alive():
-            proc.join()
-    # remove BLAST databases
-    util.PrintTime("Done all-versus-all sequence search")
-    if options.search_program == "blast":
-        for f in glob.glob(scripts.files.FileHandler.GetWorkingDirectory1_Read()[0] + "BlastDBSpecies*"):
-            os.remove(f)
-    if options.search_program == "mmseqs":
-        for i in xrange(speciessInfoObj.nSpAll):
-            for j in xrange(speciessInfoObj.nSpAll):
-                tmp_dir = "/tmp/tmpBlast%d_%d.txt" % (i,j)
-                if os.path.exists(tmp_dir):
-                    try:
-                        shutil.rmtree(tmp_dir)
-                    except OSError:
-                        time.sleep(1)
-                        shutil.rmtree(tmp_dir, True)  # shutil / NFS bug - ignore errors, it's less crucial that the files are deleted
+    else:
+        util.PrintUnderline("Running %s all-versus-all" % name_to_print)
+        print("Using %d thread(s)" % options.nBlast)
+        util.PrintTime("This may take some time....")
+        cmd_queue = mp.Queue()
+        for iCmd, cmd in enumerate(commands):
+            cmd_queue.put((iCmd+1, cmd))
+        runningProcesses = [mp.Process(target=util.Worker_RunCommand, args=(cmd_queue, options.nBlast, len(commands), True)) for i_ in xrange(options.nBlast)]
+        for proc in runningProcesses:
+            proc.start()#
+        for proc in runningProcesses:
+            while proc.is_alive():
+                proc.join()
+        # remove BLAST databases
+        util.PrintTime("Done all-versus-all sequence search")
+        if options.search_program == "blast":
+            for f in glob.glob(scripts.files.FileHandler.GetWorkingDirectory1_Read()[0] + "BlastDBSpecies*"):
+                os.remove(f)
+        if options.search_program == "mmseqs":
+            for i in xrange(speciessInfoObj.nSpAll):
+                for j in xrange(speciessInfoObj.nSpAll):
+                    tmp_dir = "/tmp/tmpBlast%d_%d.txt" % (i,j)
+                    if os.path.exists(tmp_dir):
+                        try:
+                            shutil.rmtree(tmp_dir)
+                        except OSError:
+                            time.sleep(1)
+                            shutil.rmtree(tmp_dir, True)  # shutil / NFS bug - ignore errors, it's less crucial that the files are deleted
 
 # 9
 def GetOrthologues(dirs, options, program_caller, orthogroupsResultsFilesString=None):
@@ -1461,6 +1465,7 @@ def GetOrthologues(dirs, options, program_caller, orthogroupsResultsFilesString=
                                                                     options.msa_program,
                                                                     options.tree_program,
                                                                     options.recon_method,
+                                                                    options.qOutputCommands,
                                                                     options.nBlast,
                                                                     options.nProcessAlg,
                                                                     options.qDoubleBlast,
@@ -1547,7 +1552,7 @@ def ProcessesNewFasta(fastaDir, speciesInfoObj_prev = None, speciesToUse_prev_na
                         iSeq += 1
                     else:
                         if not qHasAA and (iLine < mLinesToCheck):
-#                            qHasAA = qHasAA or any([c in line for c in ['D','E','F','H','I','K','L','M','N','P','Q','R','S','V','W','Y']])
+#                           qHasAA = qHasAA or any([c in line for c in ['D','E','F','H','I','K','L','M','N','P','Q','R','S','V','W','Y']])
                             qHasAA = qHasAA or any([c in line for c in ['E','F','I','L','P','Q']]) # AAs minus nucleotide ambiguity codes
                         outputFasta.write(line)
                 outputFasta.write("\n")

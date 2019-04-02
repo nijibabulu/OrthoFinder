@@ -27,7 +27,7 @@
 
     "iqtree":{ 
     "program_type": "tree",
-    "cmd_line": "iqtree -s INPUT -pre PATH/IDENTIFIER > /dev/null",
+    "cmd_line": "iqtree -msub nuclear -s INPUT -pre PATH/IDENTIFIER > /dev/null",
     "ouput_filename": "PATH/IDENTIFIER.treefile"
     },
     
