@@ -5,7 +5,7 @@ module load diamond
 ./orthofinder/orthofinder.py -op -f testRun
 ```
 
-Then infer orthogroups and output the tree commands:
+Then infer orthogroups and output the tree commands (**the `stdout` output of this command is needed to know which commands to run on the cluster**):
 
 ```
 module load iqtree mafft
