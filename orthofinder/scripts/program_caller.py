@@ -65,6 +65,7 @@ class ProgramCaller(object):
         self.search_search = dict()
         # Add default methods
         self.msa['mafft'] = Method('mafft', {"cmd_line": "mafft --localpair --maxiterate 1000 --anysymbol INPUT > OUTPUT 2> /dev/null", "cmd_line_fast": "mafft --anysymbol INPUT > OUTPUT 2> /dev/null", "n_seqs_use_fast" : "500"})
+        self.msa['mafft_trim'] = Method('mafft', {"cmd_line": "mafft --localpair --maxiterate 1000 --anysymbol INPUT > OUTPUT.untrimmed 2> /dev/null && trimal -gappyout -keepseqs -in OUTPUT.untrimmed -out OUTPUT", "cmd_line_fast": "mafft --anysymbol INPUT  2> /dev/null | trimal -keepseqs -gappyout -in OUTPUT.untrimmed -out OUTPUT", "n_seqs_use_fast" : "500"})
         self.tree['fasttree'] = Method('fasttree', {"cmd_line": "FastTree INPUT > OUTPUT 2> /dev/null"})
         if configure_file == None:
             return
@@ -225,6 +226,7 @@ class ProgramCaller(object):
         shutil.rmtree(d)
         if success: print(" - ok")
         else:
+            print(d)
             print(" - failed")
             print("".join(stdout))
             print("".join(stderr))
@@ -344,4 +346,3 @@ def RunParallelCommandsAndMoveResultsFile(nProcesses, commands_and_filenames, qL
         while proc.is_alive():
             proc.join(10.)
             time.sleep(2)
-                  

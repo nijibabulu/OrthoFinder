@@ -593,11 +593,16 @@ def CanRunOrthologueDependencies(workingDir, qMSAGeneTrees, qPhyldog, qStopAfter
     # FastTree & MAFFT
     if qMSAGeneTrees or qPhyldog:
         testFN, temp_dir = trees_msa.WriteTestFile(workingDir)
-        if msa_method == "mafft":
+        if "mafft" in msa_method:
             if not util.CanRunCommand("mafft %s" % testFN, qAllowStderr=True):
                 print("ERROR: Cannot run mafft")
                 print("Please check MAFFT is installed and that the executables are in the system path\n")
                 return False
+            if "trim" in msa_method:
+                if not util.CanRunCommand("trimal -gappyout -in %s" % testFN, qAllowStderr=True):
+                    print("ERROR: Cannot run trimal")
+                    print("Please check trimAl is installed and that the executables are in the system path\n")
+                    return False
         elif msa_method != None:
             if not program_caller.TestMSAMethod(temp_dir, msa_method):
                 print("ERROR: Cannot run user-configured MSA method '%s'" % msa_method)
@@ -619,6 +624,7 @@ def CanRunOrthologueDependencies(workingDir, qMSAGeneTrees, qPhyldog, qStopAfter
             time.sleep(1)
             shutil.rmtree(temp_dir, True)  # shutil / NFS bug - ignore errors, it's less crucial that the files are deleted
             
+
     if qPhyldog:
         if not util.CanRunCommand("mpirun -np 1 phyldog", qAllowStderr=False):
             print("ERROR: Cannot run mpirun -np 1 phyldog")

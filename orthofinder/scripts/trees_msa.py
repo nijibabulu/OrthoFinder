@@ -325,14 +325,14 @@ class TreesForOrthogroups(object):
         outfn_list = [self.GetAlignmentFilename(i) for i, og in enumerate(ogs) if len(og) >= 2]
         id_list = ["OG%07d" % i for i, og in enumerate(ogs) if len(og) >= 2]
         nSeqs = [len(og) for og in ogs if len(og) >= 2]
-        return self.program_caller.GetMSACommands(self.msa_program, infn_list, outfn_list, id_list, nSeqs)
+        return  self.program_caller.GetMSACommands(self.msa_program, infn_list, outfn_list, id_list, nSeqs)
         
     def GetTreeCommands(self, alignmentsForTree, ogs, threads=None):
         outfn_list = [self.GetTreeFilename(i) for i, og in enumerate(ogs) if len(og) >= 3]
         id_list = ["OG%07d" % i for i, og in enumerate(ogs) if len(og) >= 3]
         nSeqs = [len(og) for og in ogs if len(og) >= 3]
         return self.program_caller.GetTreeCommands(self.tree_program, alignmentsForTree, outfn_list, id_list, nSeqs)
-     
+
     def RenameAlignmentTaxa(self, idsAlignFNS, accAlignFNs, idsDict):
         for i, (alignFN, outAlignFN) in enumerate(zip(idsAlignFNS, accAlignFNs)):
             with open(alignFN, 'rb') as infile, open(outAlignFN, 'wb') as outfile:
