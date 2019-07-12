@@ -415,12 +415,17 @@ def RenameTreeTaxa(treeFN_or_tree, newTreeFilename, idsMap, qSupport, qFixNegati
             t = treeFN_or_tree
         else:
             qHaveSupport = False
+            qHaveInternalNames = False
             if inFormat == None:
                 try:
                     t = tree.Tree(treeFN_or_tree, format=2)
                     qHaveSupport = True
                 except:
-                    t = tree.Tree(treeFN_or_tree)
+                    try:
+                        t = tree.Tree(treeFN_or_tree, format=3)
+                        qHaveInternalNames = True
+                    except: 
+                        t = tree.Tree(treeFN_or_tree, format=0)
             else:
                 t = tree.Tree(treeFN_or_tree, format=inFormat)
         for node in t.get_leaves():
@@ -440,9 +445,11 @@ def RenameTreeTaxa(treeFN_or_tree, newTreeFilename, idsMap, qSupport, qFixNegati
                 outfile.write(t.write(format=3)[:-1] + label + "0;")  # internal + terminal branch lengths, leaf names, node names. (tree library won't label root node)
         else:
             if qSupport or qHaveSupport:
-                t.write(outfile = newTreeFilename, format=2)  
+                t.write(outfile = newTreeFilename)
+            elif qHaveInternalNames:
+                t.write(outfile=newTreeFilename, format=3)
             else:
-                t.write(outfile = newTreeFilename, format=5)  
+                t.write(outfile = newTreeFilename, format=0)
     except:
         pass
     
