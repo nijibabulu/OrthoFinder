@@ -558,6 +558,26 @@ def CreateJob(commands, name, job_index):
         commands
     )
 
+def CreateJobInputFile(name, contents, job_index=None):
+    """Create and return the full path of a new file, filling it with
+    the given contents
+
+    :param name: a name identifier for the job
+    :param contents: a string to populate the file with
+    :param job_index: an optional index to the file
+    :return: the path of the file containing the given contents
+    """
+
+    import files
+
+    wd_path = files.FileHandler.GetWorkingDirectory_Write()
+    file_name = ("" if job_index is None else "{:02d}".format(job_index)) + name
+    file_path = os.path.join(wd_path, file_name)
+    with open(file_path, "w") as f:
+        f.write(contents)
+
+    return file_path
+
 
 def CreateFileOpCmd(operation, arguments):
     import orthofinder

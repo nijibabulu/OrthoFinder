@@ -281,12 +281,20 @@ def CreateOGTreesJob(commands, job_index):
     return util.CreateJob(commands, "og_trees", job_index)
 
 
+def makeJobFiles(name, objs, job_index):
+    ins, outs = zip(*objs)
+    in_fn = util.CreateJobInputFile(name+"in", "\n".join(ins), job_index)
+    out_fn = util.CreateJobInputFile(name+"out", "\n".join(outs), job_index)
+    return in_fn,out_fn
+
 def CreateRenameTaxaJob(alignments, trees, job_index):
-    commands = [(util.CreateFileOpCmd("rename-alignment", [infile, outfile]), None)
-                for infile, outfile in alignments]
-    commands += [(util.CreateFileOpCmd("rename-tree", [infile, outfile]), None)
-                 for infile, outfile in trees]
-    return util.CreateJob(commands, "rename-taxa", job_index)
+    in_aln_fn, out_aln_fn = makeJobFiles("aln", alignments, job_index)
+    in_tree_fn, out_tree_fn = makeJobFiles("tree", trees, job_index)
+    cmds = [(util.CreateFileOpCmd("rename-alignments", [in_aln_fn, out_aln_fn]), None),
+            (util.CreateFileOpCmd("rename-trees", [in_tree_fn, out_tree_fn]), None)]
+    return util.CreateJob(cmds, "rename-taxa", job_index)
+
+
 
 
 """ 
@@ -416,7 +424,6 @@ class TreesForOrthogroups(object):
                 # Add species tree to list of commands to run
             commands_and_filenames = [self.program_caller.GetTreeCommands(self.tree_program, [concatenated_algn_fn], [speciesTreeFN_ids], ["SpeciesTree"])]
             if qOutputCommands:
-                print(commands_and_filenames)
                 job_files.append(CreateSpeciesTreeJob(commands_and_filenames, len(job_files)))
                 commands_and_filenames = []
             util.PrintUnderline("Inferring remaining multiple sequence alignments and gene trees")

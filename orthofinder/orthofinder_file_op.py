@@ -21,10 +21,10 @@ class OrthoFinderContext:
         self.options.qStartFromGroups = True
         scripts.files.InitialiseFileHandler(self.options, continuationDir=wd)
         self.speciesInfoObj, self.speciesToUse_names = \
-            orthofinder.ProcessPreviousFiles(wd, False)
+            orthofinder.ProcessPreviousFiles([wd], False)
         self.ogSet = scripts.orthologues.OrthoGroupsSet(
             scripts.files.FileHandler.GetWorkingDirectory1_Read(),
-            self.speciesInfoObj.speciesToUse, self.speciesInfoObj.nSpAll, True,
+            self.speciesInfoObj.speciesToUse, self.speciesInfoObj.nSpAll, False,
             idExtractor=scripts.util.FirstWordExtractor)
         self.id_dict = dict(self.ogSet.Spec_SeqDict().items() +
                             self.ogSet.SpeciesDict().items())
@@ -71,6 +71,33 @@ def rename_alignment(of_ctx, in_align, out_align):
     of_ctx.tree_gen.RenameAlignmentTaxa([in_align], [out_align], of_ctx.id_dict)
 
 
+@cli.command(help='''rename taxa on several multiple alignments. Input file is a 
+file containing all input files, one per line, and the output file should have 
+the same number of lines, containing each of the output files''')
+@click.argument('IN_ALIGN_LIST')
+@click.argument('OUT_ALIGN_LIST')
+@click.pass_obj
+def rename_alignments(of_ctx, in_align_list, out_align_list):
+    in_aligns = [l.strip() for l in open(in_align_list)]
+    out_aligns = [l.strip() for l in open(out_align_list)]
+    of_ctx.tree_gen.RenameAlignmentTaxa(in_aligns, out_aligns, of_ctx.id_dict)
+
+
+@cli.command(help='''rename taxa on several trees. Input file is a 
+file containing all input files, one per line, and the output file should have 
+the same number of lines, containing each of the output files''')
+@click.argument('IN_TREE_LIST')
+@click.argument('OUT_TREE_LIST')
+@click.pass_obj
+def rename_trees(of_ctx, in_tree_list, out_tree_list):
+    in_trees = [l.strip() for l in open(in_tree_list)]
+    out_trees = [l.strip() for l in open(out_tree_list)]
+    support = scripts.util.HaveSupportValues(in_trees[0])
+    for in_tree, out_tree in zip(in_trees, out_trees):
+        scripts.util.RenameTreeTaxa(in_tree, out_tree, of_ctx.id_dict, support)
+
+
+
 @cli.command(help='rename taxa on a tree')
 @click.argument('IN_TREE')
 @click.argument('OUT_TREE')
@@ -80,7 +107,8 @@ def rename_tree(of_ctx, in_tree, out_tree):
     scripts.util.RenameTreeTaxa(in_tree, out_tree, of_ctx.id_dict, support)
 
 
-@cli.command(help='rename taxa on a tree')
+@cli.command(help='''perform stride analysis: estimate the most likely root for
+an unrooted tree''')
 @click.argument('UNROOTED_SPECIES_TREE')
 @click.argument('TREES_DIR')
 @click.argument('NUM_THREADS', type=int)
